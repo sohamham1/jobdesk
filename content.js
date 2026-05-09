@@ -34,6 +34,7 @@ const pageCaptureState = {
   currentUrl: location.href,
   context: null,
   currentSelectionKey: "",
+  dismissedContextKey: "",
   initialized: false,
   saving: false,
   overlayDismissTimeoutId: null,
@@ -69,6 +70,9 @@ function scrapeCurrentPage(message) {
 
   if (looksLikeJobPage(loweredUrl, title, bodyText)) {
     const job = extractJob(sourceSite, title, bodyText, rawBodyText, url);
+    if (isSavedJob(job, message?.savedJobs || [])) {
+      return { kind: "none" };
+    }
     return {
       kind: "job",
       title: `${job.role || "Role detected"} at ${job.company || "Unknown company"}`,
@@ -86,6 +90,9 @@ function scrapeCurrentPage(message) {
       message?.settings?.college,
       message?.savedJobs || []
     );
+    if (isSavedContact(contact, message?.savedContacts || [])) {
+      return { kind: "none" };
+    }
     return {
       kind: "contact",
       title: `${contact.name || "Profile detected"}${contact.current_company ? ` at ${contact.current_company}` : ""}`,
@@ -539,6 +546,62 @@ function normalize(value) {
   return cleanText(value).toLowerCase();
 }
 
+function isSavedJob(job, savedJobs) {
+  const normalizedUrl = normalize(job?.url);
+  const normalizedCompany = normalize(job?.company);
+  const normalizedRole = normalize(job?.role);
+
+  return (savedJobs || []).some((savedJob) => {
+    if (normalizedUrl && normalize(savedJob?.url) === normalizedUrl) {
+      return true;
+    }
+    return (
+      normalizedCompany &&
+      normalizedRole &&
+      normalize(savedJob?.company) === normalizedCompany &&
+      normalize(savedJob?.role) === normalizedRole
+    );
+  });
+}
+
+function isSavedContact(contact, savedContacts) {
+  const normalizedProfileUrl = normalize(contact?.profile_url);
+  const normalizedName = normalize(contact?.name);
+
+  return (savedContacts || []).some((savedContact) => {
+    if (normalizedProfileUrl && normalize(savedContact?.profile_url) === normalizedProfileUrl) {
+      return true;
+    }
+    return normalizedName && normalize(savedContact?.name) === normalizedName;
+  });
+}
+
+function getContextKey(context) {
+  if (!context?.kind || !context?.data) {
+    return "";
+  }
+
+  if (context.kind === "job") {
+    return [
+      "job",
+      normalize(context.data.url),
+      normalize(context.data.role),
+      normalize(context.data.company),
+    ].join("|");
+  }
+
+  if (context.kind === "contact") {
+    return [
+      "contact",
+      normalize(context.data.profile_url),
+      normalize(context.data.name),
+      normalize(context.data.current_company),
+    ].join("|");
+  }
+
+  return "";
+}
+
 async function initializePageCapture() {
   if (pageCaptureState.initialized) {
     return;
@@ -557,6 +620,7 @@ function watchForNavigationChanges() {
   window.setInterval(() => {
     if (location.href !== pageCaptureState.currentUrl) {
       pageCaptureState.currentUrl = location.href;
+      pageCaptureState.dismissedContextKey = "";
       if (shouldIgnorePageForCapture()) {
         removeOverlay();
         return;
@@ -593,14 +657,19 @@ async function refreshPageCapture() {
     const context = scrapeCurrentPage({
       settings: { college: requirements.settings?.college || "" },
       savedJobs: requirements.savedJobs || [],
+      savedContacts: requirements.savedContacts || [],
     });
+    const contextKey = getContextKey(context);
 
     if (context.kind === "job" || context.kind === "contact") {
+      if (contextKey && contextKey === pageCaptureState.dismissedContextKey) {
+        pageCaptureState.context = null;
+        pageCaptureState.currentSelectionKey = contextKey;
+        removeOverlay();
+        return;
+      }
       pageCaptureState.context = context;
-      pageCaptureState.currentSelectionKey =
-        context.kind === "job"
-          ? `${context.data.url || ""}|${context.data.role || ""}|${context.data.company || ""}`
-          : "";
+      pageCaptureState.currentSelectionKey = contextKey;
       renderOverlay(context);
     } else {
       pageCaptureState.context = null;
@@ -758,6 +827,7 @@ function renderOverlay(context) {
     `;
     document.documentElement.appendChild(overlay);
     overlay.querySelector(".jobdesk-page-capture__close").onclick = () => {
+      pageCaptureState.dismissedContextKey = getContextKey(pageCaptureState.context);
       pageCaptureState.context = null;
       removeOverlay();
     };
@@ -794,6 +864,7 @@ function scheduleOverlayAutoDismiss() {
     window.clearTimeout(pageCaptureState.overlayDismissTimeoutId);
   }
   pageCaptureState.overlayDismissTimeoutId = window.setTimeout(() => {
+    pageCaptureState.dismissedContextKey = getContextKey(pageCaptureState.context);
     pageCaptureState.context = null;
     removeOverlay();
   }, 20000);

@@ -39,12 +39,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === "JOBDESK_GET_CAPTURE_REQUIREMENTS") {
     chrome.storage.sync
-      .get([STORAGE_KEYS.jobs, STORAGE_KEYS.settings])
+      .get([STORAGE_KEYS.jobs, STORAGE_KEYS.contacts, STORAGE_KEYS.settings])
       .then((data) =>
         sendResponse({
           ok: true,
           settings: { ...DEFAULT_SETTINGS, ...(data.settings || {}) },
-          savedJobs: (data.jobs || []).map((job) => ({ id: job.id, company: job.company })),
+          savedJobs: (data.jobs || []).map((job) => ({
+            id: job.id,
+            company: job.company,
+            role: job.role,
+            url: job.url,
+          })),
+          savedContacts: (data.contacts || []).map((contact) => ({
+            id: contact.id,
+            name: contact.name,
+            profile_url: contact.profile_url,
+          })),
         })
       );
     return true;

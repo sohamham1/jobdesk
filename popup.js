@@ -1175,7 +1175,17 @@ async function detectCurrentPage() {
     const response = await chrome.tabs.sendMessage(tab.id, {
       type: "JOBDESK_SCRAPE_PAGE",
       settings: { college: state.settings.college },
-      savedJobs: state.jobs.map((job) => ({ id: job.id, company: job.company })),
+      savedJobs: state.jobs.map((job) => ({
+        id: job.id,
+        company: job.company,
+        role: job.role,
+        url: job.url,
+      })),
+      savedContacts: state.contacts.map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        profile_url: contact.profile_url,
+      })),
     });
 
     if (response?.kind === "job" || response?.kind === "contact") {
